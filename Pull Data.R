@@ -21,4 +21,4 @@ Y = GSE2034_Clinical$`time to relapse or last follow-up (months)`
 Censor = GSE2034_Clinical$`relapse (1=True)`
 
 #Save data to an R file
-save(X,Y,Censor,GSE2034_Clinical,GSE2034_Genetic,file = "Data/GSE2014.Rdata")
+save(X,Y,Censor,GSE2034_Clinical,GSE2034_Genetic,file = "Data/GSE2034.Rdata")
