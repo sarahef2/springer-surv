@@ -14,6 +14,7 @@ GSE2034_Genetic = getGEO(GEO="GSE2034", destdir="~/data")
 
 #Clinical Data
 library(readr)
+#Update to download directly from website
 GSE2034_Clinical <- read_delim("Data/GSE2034_Clinical.txt","\t", escape_double = FALSE, trim_ws = TRUE, skip = 7)
 ##
 X = t(GSE2034_Genetic)

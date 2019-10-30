@@ -14,51 +14,38 @@ data("colon")
 ```
 
 # Example  
-```{r, cache=TRUE,eval=FALSE}
-## ##############################################################
-## load and process data
-## ##############################################################
-## libcurl4-openssl-dev, libssl-dev, libxml2-dev
-library(GEOquery)
-## ##############################################################
-## load data
-## ##############################################################
-## Doesn't work on my computer, but this is where the data came from
-gse2034 = getGEO(GEO="GSE2034", destdir="~/data")
-#side = readRDS("D:/Data/Documents/Research/survForest/Sarah/Data/Breast/GSE2034.rds")
-#Clinical Data
-library(readr)
-GSE2034_Clinical <- read_delim("Sarah/Data Analysis/GSE2034_Clinical.txt","\t", escape_double = FALSE, trim_ws = TRUE, skip = 7)
-##
-X = t(gse2034)
-Y = GSE2034_Clinical$`time to relapse or last follow-up (months)`
-Censor = GSE2034_Clinical$`relapse (1=True)`
-```
-
 ```{r}
-GSE_data <- readRDS("D:/Data/Documents/Research/survForest/Sarah/GSE_Simulations/GSE_data.rds")
-X <- GSE_data$X
-Y <- GSE_data$Y
-Censor <- GSE_data$Censor
+load("Data/GSE2034.Rdata")
 
 Data <- data.frame(X,Y=Y,Censor=Censor)
 ```
 
 # Study: GSE2034  
 [Link](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=gse2034)  
-Should download directrlt from website in this file.  Make new github repository with all of this.  Make a webpage.  Include the reduced data on github and code for full data.
 ##Summary  
 
 >This series represents 180 lymph-node negative relapse free patients and 106 lymph-node negate patients that developed a distant metastasis.
 Please see attached patient clinical parameters sheet for more information.
-Keywords: other  
-
+  
 ## Variables  
-Add plots for marginal survival.  Use darkorange and deepskyblue.  Include ER+ and ER-.
-In plot, mark censored observations.  Make sure legends are included.
+  
 ```{r}
 library(ggplot2)
-ggplot(Data)+geom_histogram(aes(x=Y))+facet_grid(rows=Censor)
+library(survival)
+surv <- Surv(Y,Censor)
+curv <- survfit(surv~1)
+plot_frame <- data.frame(Time=curv$time,Survival=curv$surv,C=ifelse(curv$n.censor>0,"Censored",NA))
+ggplot(plot_frame,aes(x=Time,y=Survival,shape=C))+geom_step(aes(x=Time,y=Survival),col="darkorange",size=1)+ylim(0,1)+geom_point(col="deepskyblue",size=1.5,na.rm = TRUE,show.legend = TRUE)+xlab("log(months)")+ylab("Probability of Survival")+scale_x_log10()#+ggtitle("Marginal Survival") + guides(shape = guide_legend(title = "", title.position = "left")) + scale_shape_discrete(na.translate=FALSE)
+ggsave("Plots/Zhu_SurvAnalysis_MargSurv.png")
+
+ERp<-survfit(Surv(Y,Censor)~1,data=Data[GSE2034_Clinical$`ER Status`=="ER+",])
+ERn<-survfit(Surv(Y,Censor)~1,data=Data[GSE2034_Clinical$`ER Status`=="ER-",])
+plot_frame <- data.frame(Time=c(ERp$time,ERn$time),Survival=c(ERp$surv,ERn$surv),C=c(ifelse(ERp$n.censor>0,"Censored",NA),ifelse(ERn$n.censor>0,"Censored",NA)),ER=c(rep("ER+",length(ERp$time)),rep("ER-",length(ERn$time))))
+ggplot(plot_frame,aes(x=Time,y=Survival))+geom_step(aes(x=Time,y=Survival,col=ER),size=1,show.legend = TRUE) + scale_shape_manual(na.translate=FALSE,values="+")+geom_point(aes(shape=C,col=ER),size=5,na.rm = TRUE,show.legend = TRUE, position = "jitter")+scale_color_manual(values=c("darkorange","deepskyblue"))+xlab("log(months)")+ylab("Probability of Survival")+ guides(col = guide_legend(title = ""), shape=guide_legend(title = ""))+ylim(0.5,1)+scale_x_log10() #+ guides(col = guide_legend(title = ""),shape = guide_legend(title = ""))+ggtitle("Marginal Survival by ER Status")
+ggsave("Plots/Zhu_SurvAnalysis_MargbyER.png")
+```
+```{r}
+ggplot(Data)+geom_histogram(aes(x=Y))+facet_grid(rows=Censor)+scale_x_log10()
 table(Censor)
 ```
 
@@ -71,28 +58,34 @@ for(i in 1:dim(X)[2]){
   weights[i] <- summary(coxph(Surv(Y, Censor)~X[,i]))$coefficients[5]
 }
 
-Xr <- X[,order(weights)[1:2000]]
+topX <- colnames(X)[order(weights)[1:500]]
 
-test <- sample(dim(X)[1],10,replace = FALSE)
-train <- c(1:dim(X)[1])[!(c(1:dim(X)[1] %in% test))]
+Gene_signature <- read.table("Data/Gene_signature.txt", header=TRUE, quote="\"", stringsAsFactors=FALSE)
 
-Data <- data.frame(Xr,Y=Y,Censor=Censor)
+combX <- unique(c(topX,Gene_signature$X))
+
+Xr <- X[,colnames(X) %in% combX]
+
+#test <- sample(dim(Xr)[1],10,replace = FALSE)
+#train <- c(1:dim(Xr)[1])[!(c(1:dim(X)[1] %in% test))]
+
+Data <- data.frame(Xr,ER=GSE2034_Clinical$`ER Status`,Y=Y,Censor=Censor)
 ```
 
 ```{r}
 library(randomForestSRC)
 #Tuning
-mtry_ops <- c(sqrt(dim(Xr)[2]),dim(Xr)[2]/3,dim(Xr)[2])
-ns_ops <- c(1,log(length(Y))) #Include log of failure
+mtry_ops <- c(sqrt(dim(Xr)[2]+1),(dim(Xr)[2]+1)/3,dim(Xr)[2]+1)
+ns_ops <- c(1,log(length(Y)),log(sum(Censor))) #Include log of failure
 param_tunings <- expand.grid(mtry=mtry_ops, ns=ns_ops, nsplit=c(0,1))
 ```
 
 Cite package version
 ```{r}
-#SEED
 param_tunings$oob_err <- NA
 for(i in 1:dim(param_tunings)[1]){
-  fit_ops <- rfsrc(Surv(Y,Censor)~., data = Data[train,], nodesize = param_tunings$ns[i], mtry = param_tunings$mtry[i], nsplit = param_tunings$nsplit[i], ntree = 1000, importance = FALSE, samptype = "swr", sampsize = dim(Data[train,])[1])
+  set.seed(2+i)
+  fit_ops <- rfsrc(Surv(Y,Censor)~., data = Data, nodesize = param_tunings$ns[i], mtry = param_tunings$mtry[i], nsplit = param_tunings$nsplit[i], ntree = 1000, importance = FALSE, samptype = "swr", sampsize = dim(Data)[1])
   param_tunings$oob_err[i]<-fit_ops$err.rate[length(fit_ops$err.rate)]
 }
 
@@ -102,85 +95,138 @@ nsplit_opt <- param_tunings$nsplit[param_tunings$oob_err==min(param_tunings$oob_
 ```
 
 ```{r}
-fit_opt <- rfsrc(Surv(Y,Censor)~., data = Data[train,], nodesize =ns_opt, mtry = mtry_opt, nsplit = nsplit_opt, ntree = 2500, importance = TRUE, samptype = "swr", sampsize = dim(Data)[1])
-pred_opt <- predict(fit_opt, newdata = Data[test,], outcome = "train")
+fit_opt <- rfsrc(Surv(Y,Censor)~., data = Data, nodesize =ns_opt, mtry = mtry_opt, nsplit = nsplit_opt, ntree = 1000, importance = TRUE, samptype = "swr", sampsize = dim(Data)[1])
+pred_opt <- predict(fit_opt, outcome = "train")
 fit_opt
 pred_opt
 ```
 
 ```{r}
+VI1 <- c(paste0("X",colnames(Xr)),"ER")[fit_opt$importance==max(fit_opt$importance)][1]
+VI1
+
 library(reshape2)
-surv <- data.frame(pred_opt$time.interest,t(pred_opt$survival))
+#surv <- data.frame(pred_opt$time.interest,t(pred_opt$survival))
+surv <- data.frame(fit_opt$time.interest,t(fit_opt$survival.oob))
 melted <- melt(surv,1)
+truth <- data.frame(subj=paste0("X",c(1:dim(X)[1])),Y=Data[,"Y"],ER=Data[,"ER"],MaxVar=Data[,VI1])
 colnames(melted) <- c("Time", "Subject", "Probability")
-#melted <- melted[1:(55*10),]
+melted <- merge(melted, truth, by.x="Subject", by.y="subj",all.x=TRUE)
+melted$Yp <- ifelse(melted$Y==melted$Time,melted$Y,NA)
+melted1 <- melted[melted$Subject %in% c("X3","X5","X52","X54","X65","X66","X68","X70","X286"),]
 
-ggplot(melted,aes(x=Time,y=Probability))+geom_line(aes(col=Subject))
-plot(pred_opt$time.interest,pred_opt$survival[1,],type = "l")
-for(i in 2:10){
-  lines(pred_opt$time.interest,pred_opt$survival[i,])
-}
+ggplot(melted1,aes(x=Time,y=Probability))+geom_step(aes(col=Subject),show.legend = TRUE)+geom_point(aes(x=Yp,y=Probability,col=Subject),na.rm = TRUE,show.legend = TRUE)+ylab("Probability of Survival")+xlab("log(months)")+scale_x_log10()
+ggsave("Plots/Zhu_SurvAnalysis_TestPreds.png")
 ```
 
 ```{r}
-VI <- data.frame(id=c(1:dim(Xr)[2]),variable=colnames(Xr),vi=fit_opt$importance,ord=order(fit_opt$importance))
+VI <- data.frame(id=c(1:(dim(Xr)[2]+1)),variable=c(colnames(Xr),"ER"),vi=fit_opt$importance,signature=c(colnames(Xr),"ER")%in%Gene_signature$X)
 VI <- VI[order(VI$vi),]
-ggplot(VI)+geom_histogram(aes(x=vi),bins=50)+ggtitle("Variable Importance")
+VI$ord <- c(1:(dim(Xr)[2]+1))
+VI$variable <- factor(VI$variable, levels = VI$variable[order(VI$vi)])
+ggplot(VI)+geom_histogram(aes(x=vi),bins=50)+ylab("Count")+xlab("Variable Importance")#+ggtitle("Variable Importance")
+ggsave("Plots/Zhu_SurvAnalysis_VIhist.png")
+#ggplot(VI)+geom_histogram(aes(x=vi),bins=20)+facet_grid(rows=signature)+ggtitle("Variable Importance")
+ggplot(VI[-c(1:455),],aes(x=ord,y=vi,col=signature))+geom_point(show.legend = TRUE)+scale_color_manual(values=c("darkorange","deepskyblue"))+geom_jitter(show.legend = TRUE)+ylab("Variable Importance")+xlab("Top 100 Variables in Order") + guides(col = guide_legend(title = "Included in 76 Gene Signature"))#+ggtitle("Top 100 Variables")
+ggsave("Plots/Zhu_SurvAnalysis_Top100VI.png")
+
+#Top 20, more informative legend
+#Make legend wider, line slightly thinner, remove dot from color legend
+ggplot(VI[(dim(VI)[1]-20):dim(VI)[1],],aes(x=variable,y=vi,fill=signature))+geom_col(width = 0.5,show.legend = TRUE)+scale_fill_manual(values=c("darkorange","deepskyblue"))+ylab("Variable Importance")+xlab("Top 20 Variables by Variable Importance")+coord_flip() + guides(fill = guide_legend(title = "Included in Wang et. all 76 Gene Signature"))
+ggsave("Plots/Zhu_SurvAnalysis_Top20VI.png")
 ```
 
 ```{r}
-tail(VI)
+tail(VI[,c("variable","signature","vi")])
+table(VI[-c(1:455),"signature"])
 ```
 
-```{r,echo=FALSE,eval=FALSE}
-colon <- colon[colon$etype==1,]
-head(colon)
-dim(colon)
-set.seed(5)
-cln<-colon[apply(colon, 1, function(row) !any(is.na(row))),]
-test_obs <- sample(dim(cln)[1],100)
-trainColon <- cln[!(c(1:dim(cln)[1]) %in% test_obs),]
-testColon <- cln[test_obs,]
+```{r}
+param_tunings
+mtry_opt
+ns_opt
+nsplit_opt
+max(param_tunings$oob_err)/min(param_tunings$oob_err)
 ```
 
-```{r,echo=FALSE,eval=FALSE}
-library(randomForestSRC)
-#Default settings
-fit_default <- rfsrc(Surv(time,status)~.,data = trainColon,importance=FALSE)
-pred_default <- predict(fit_default, newdata=testColon, outcome = "train")
-fit_default$err.rate[1000]
-pred_default$err.rate[1000]
-```
-
-```{r,echo=FALSE,eval=FALSE}
-#Tuning
-mtry_ops <- c(1,sqrt(dim(trainColon)[2]),16)
-ns_ops <- c(log(dim(trainColon)[1]),(dim(trainColon)[1])^(1/3))
-param_tunings <- expand.grid(mtry=mtry_ops, ns=ns_ops)
-```
-
-```{r,echo=FALSE,eval=FALSE}
-param_tunings$oob_err <- NA
-for(i in 1:dim(param_tunings)[1]){
-  fit_ops <- rfsrc(Surv(time,status)~., data = trainColon, nodesize = param_tunings$ns[i], mtry = param_tunings$mtry[i], nsplit = 0, ntree = 250, importance = FALSE, samptype = "swr", sampsize = dim(trainColon)[1])
-  param_tunings$oob_err[i]<-fit_ops$err.rate[length(fit_default$err.rate)]
+Error calculations
+```{r}
+Brier_Score <- function(surv, Censor, Ytest, tmpts){
+  #tmpts <- sort(unique(Ytest[Censor]))
+  KM <- survfit(Surv(Ytest,!Censor)~1)#Estimation of Censoring Distribution
+  BS <- numeric(length(tmpts))
+  for(tm in 1:length(tmpts)){
+    s<-0
+    indt <- max(c(c(1:length(KM$time))[KM$time<=tmpts[tm]],1))
+    inds <- numeric(length(Ytest))
+    if(indt<0) indt <- 1
+    for(i in 1:length(Ytest)){
+      ind <- max(c(1:length(KM$time))[KM$time<=Ytest[i]])
+      if(ind<0){
+        ind <- 1
+      }
+      inds[i] <- ind
+    }
+    s1 <- surv[,tm]^2*(Ytest<tmpts[tm]&Censor)/KM$surv[inds]
+    s1 <- ifelse(is.nan(s1),0,s1)
+    s2<-(1-surv[,tm])^2*(Ytest>tmpts[tm])/KM$surv[indt]
+    BS[tm] <- (sum(s1)+sum(s2))/length(Ytest)#(sum(s1)+sum(s2))/length(tmpts)
+  }
+  IBS <- sum(BS*diff(c(0,tmpts)))/max(tmpts)#sum(BS*diff(c(0,tmpts)))/(max(tmpts)-min(tmpts))
+  IBS
 }
 
-mtry_opt <- param_tunings$mtry[param_tunings$oob_err==min(param_tunings$oob_err)]
-ns_opt <- param_tunings$ns[param_tunings$oob_err==min(param_tunings$oob_err)]
-```
-
-```{r,echo=FALSE,eval=FALSE}
-fit_opt <- rfsrc(Surv(time,status)~., data = trainColon, nodesize =ns_opt, mtry = mtry_opt, nsplit = 0, ntree = 250, importance = TRUE, samptype = "swr", sampsize = dim(trainColon)[1])
-pred_opt <- predict(fit_opt, newdata=testColon, outcome = "train")
-fit_default
-pred_default
-```
-
-```{r,echo=FALSE,eval=FALSE}
-sort(fit_opt$importance)
-plot(pred_opt$time.interest,pred_opt$survival[1,],type = "l")
-for(i in 2:10){
-  lines(pred_opt$time.interest,pred_opt$survival[i,])
+C_index <- function(surv, Censor, Ytest){
+  surv_temp <- surv
+  while(any(surv[,dim(surv_temp)[2]]==0)){
+    surv_temp <- surv_temp[,-dim(surv_temp)]
+  }
+  Mi <- apply(surv_temp, 1, function(r) sum(-log(r)))
+  prs <- data.frame(t(combn(length(Ytest),2)))
+  prs$P1 <- Ytest[prs[,1]]
+  prs$P2 <- Ytest[prs[,2]]
+  prs$P1C <- Censor[prs[,1]]
+  prs$P2C <- Censor[prs[,2]]
+  prs$M1 <- Mi[prs[,1]]
+  prs$M2 <- Mi[prs[,2]]
+  prs <- prs[(prs$P1 != prs$P2)|(prs$P2C==TRUE | prs$P1C==TRUE),]
+  prs$P1_l_P2 <- prs$P1 < prs$P2
+  prs <- prs[!(prs$P1C==FALSE & prs$P1_l_P2),]
+  prs$P2_l_P1 <- prs$P2 < prs$P1
+  prs <- prs[!(prs$P2C==FALSE & prs$P2_l_P1),]
+  prs$P1_e_P2 <- prs$P2 == prs$P1
+  prs$Con <- 0
+  prs[(prs$P1_l_P2==TRUE & (prs$M2<prs$M1))|(prs$P2_l_P1==TRUE & (prs$M2>prs$M1)),"Con"] <- 1
+  prs[prs$P1_e_P2!=TRUE & (prs$M2==prs$M1),"Con"] <- 0.5
+  prs[prs$P1_e_P2==TRUE & (prs$M2==prs$M1),"Con"] <- 1
+  prs[prs$P1_e_P2==TRUE & (prs$M2!=prs$M1),"Con"] <- 0.5
+  1-mean(prs$Con)
 }
+
+C_index(fit_opt$survival.oob,Censor,Y)
+Brier_Score(fit_opt$survival.oob,Censor,Y,fit_opt$time.interest)
+```
+
+```{r}
+ERnL<-which(Data[[VI1]]==min(Data[[VI1]][Data$ER=="ER-"&Censor==1]))[1]
+ERpL<-which(Data[[VI1]]==min(Data[[VI1]][Data$ER=="ER+"&Censor==1]))[1]
+ERnH<-which(Data[[VI1]]==max(Data[[VI1]][Data$ER=="ER-"&Censor==1]))[1]
+ERpH<-which(Data[[VI1]]==max(Data[[VI1]][Data$ER=="ER+"&Censor==1]))[1]
+c(ERnL,ERpL,ERnH,ERpH)
+
+Lev <- data.frame(Subject=paste0("X",c(ERnL,ERpL,ERnH,ERpH)), Level=c("ER-/Low","ER+/Low","ER-/High","ER+/High"))
+
+melted2 <- melted[melted$Subject %in% paste0("X",c(ERnL,ERpL,ERnH,ERpH)),]
+melted2$Level <- sapply(as.character(melted2$Subject),function(s) Lev$Level[Lev$Subject==s])
+#melted2<-melted2[order(melted2$MaxVar),]
+#melted2$MaxVar<-as.character(melted2$MaxVar)
+
+ggplot(melted2[melted2$ER=="ER-",],aes(x=Time,y=Probability))+geom_step(aes(group=Subject,col=Level),show.legend = TRUE)+geom_point(aes(x=Yp,y=Probability,col=Level),na.rm = TRUE,show.legend = TRUE)+ylab("Probability of Survival")+xlab("log(months)")+scale_x_log10()+scale_color_manual(values=c("darkorange","deepskyblue"))
+ggsave("Plots/Zhu_SurvAnalysis_TestPredsStratERn.png")
+
+ggplot(melted2[melted2$ER=="ER+",],aes(x=Time,y=Probability))+geom_step(aes(group=Subject,col=Level),show.legend = TRUE)+geom_point(aes(x=Yp,y=Probability,col=Level),na.rm = TRUE,show.legend = TRUE)+ylab("Probability of Survival")+xlab("log(months)")+scale_x_log10()+scale_color_manual(values=c("darkorange","deepskyblue"))
+ggsave("Plots/Zhu_SurvAnalysis_TestPredsStratERp.png")
+
+ggplot(melted2,aes(x=Time,y=Probability))+geom_step(aes(group=Subject,col=Level),show.legend = TRUE,size=1.5)+geom_point(aes(x=Yp,y=Probability,col=Level),na.rm = TRUE,show.legend = TRUE)+ylab("Probability of Survival")+xlab("log(months)")+scale_x_log10() + guides(col = guide_legend(title = "ER Status/ 219478_at Level"))#+scale_color_manual(values=c("darkorange","deepskyblue"))
+ggsave("Plots/Zhu_SurvAnalysis_TestPredsStrat.png")
 ```
