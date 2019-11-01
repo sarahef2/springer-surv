@@ -8,9 +8,6 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE,cache = TRUE)
 library(survival)
-data("cancer")
-data("cgd")
-data("colon")
 ```
 
 # Example  
@@ -31,7 +28,6 @@ Please see attached patient clinical parameters sheet for more information.
   
 ```{r}
 library(ggplot2)
-library(survival)
 surv <- Surv(Y,Censor)
 curv <- survfit(surv~1)
 plot_frame <- data.frame(Time=curv$time,Survival=curv$surv,C=ifelse(curv$n.censor>0,"Censored",NA))
@@ -52,7 +48,6 @@ table(Censor)
 ## Marginal Screening  
 Add their 76 and possibly use median absolute deviation.  Use 576. Mention supplementary file of the code.  
 ```{r}
-library(survival)
 weights <- numeric(dim(X)[2])
 for(i in 1:dim(X)[2]){
   weights[i] <- summary(coxph(Surv(Y, Censor)~X[,i]))$coefficients[5]
@@ -132,7 +127,7 @@ ggsave("Plots/Zhu_SurvAnalysis_Top100VI.png")
 
 #Top 20, more informative legend
 #Make legend wider, line slightly thinner, remove dot from color legend
-ggplot(VI[(dim(VI)[1]-20):dim(VI)[1],],aes(x=variable,y=vi,fill=signature))+geom_col(width = 0.5,show.legend = TRUE)+scale_fill_manual(values=c("darkorange","deepskyblue"))+ylab("Variable Importance")+xlab("Top 20 Variables by Variable Importance")+coord_flip() + guides(fill = guide_legend(title = "Included in Wang et. all 76 Gene Signature"))
+ggplot(VI[(dim(VI)[1]-20):dim(VI)[1],],aes(x=variable,y=vi,fill=signature))+geom_col(width = 0.5,show.legend = TRUE)+scale_fill_manual(values=c("darkorange","deepskyblue"))+ylab("Variable Importance")+xlab("Top 20 Variables by Variable Importance")+coord_flip() + guides(fill = guide_legend(title = "Included in Wang et al. 76 Gene Signature"))
 ggsave("Plots/Zhu_SurvAnalysis_Top20VI.png")
 ```
 
@@ -218,15 +213,12 @@ Lev <- data.frame(Subject=paste0("X",c(ERnL,ERpL,ERnH,ERpH)), Level=c("ER-/Low",
 
 melted2 <- melted[melted$Subject %in% paste0("X",c(ERnL,ERpL,ERnH,ERpH)),]
 melted2$Level <- sapply(as.character(melted2$Subject),function(s) Lev$Level[Lev$Subject==s])
-#melted2<-melted2[order(melted2$MaxVar),]
-#melted2$MaxVar<-as.character(melted2$MaxVar)
-
-ggplot(melted2[melted2$ER=="ER-",],aes(x=Time,y=Probability))+geom_step(aes(group=Subject,col=Level),show.legend = TRUE)+geom_point(aes(x=Yp,y=Probability,col=Level),na.rm = TRUE,show.legend = TRUE)+ylab("Probability of Survival")+xlab("log(months)")+scale_x_log10()+scale_color_manual(values=c("darkorange","deepskyblue"))
-ggsave("Plots/Zhu_SurvAnalysis_TestPredsStratERn.png")
-
-ggplot(melted2[melted2$ER=="ER+",],aes(x=Time,y=Probability))+geom_step(aes(group=Subject,col=Level),show.legend = TRUE)+geom_point(aes(x=Yp,y=Probability,col=Level),na.rm = TRUE,show.legend = TRUE)+ylab("Probability of Survival")+xlab("log(months)")+scale_x_log10()+scale_color_manual(values=c("darkorange","deepskyblue"))
-ggsave("Plots/Zhu_SurvAnalysis_TestPredsStratERp.png")
 
 ggplot(melted2,aes(x=Time,y=Probability))+geom_step(aes(group=Subject,col=Level),show.legend = TRUE,size=1.5)+geom_point(aes(x=Yp,y=Probability,col=Level),na.rm = TRUE,show.legend = TRUE)+ylab("Probability of Survival")+xlab("log(months)")+scale_x_log10() + guides(col = guide_legend(title = "ER Status/ 219478_at Level"))#+scale_color_manual(values=c("darkorange","deepskyblue"))
 ggsave("Plots/Zhu_SurvAnalysis_TestPredsStrat.png")
+```
+
+Failure Rate:
+```{r}
+sum(Censor)/length(Censor)
 ```
