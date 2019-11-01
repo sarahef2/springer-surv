@@ -1,228 +1,239 @@
 ---
-title: "Springer Examples"
-author: "Sarah Formentini"
-date: "October 31, 2019"
+title: "Random Forests for Survival Analysis and High-Dimensional Data: R Examples"
+author: "Sarah Formentini and Ruoqing Zhu"
+date: "Last Updated: `r format(Sys.time(), '%B %d, %Y')`"
+abstract: "This is the supplementary `R` file for Random Forests for Survival Analysis and High-Dimensional Data in Springer Handbook of Engineering Statistics."
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,cache = TRUE)
-library(survival)
-library(ggplot2)
-library(reshape2)
+  knitr::opts_chunk$set(echo = TRUE,cache = TRUE)
+  library(survival)
+  library(ggplot2)
+  library(reshape2)
 ```
 
-#Installing RLT  
-```{r,eval=FALSE}
-#Installing RLT
-library(devtools)
-install_github("teazrq/RLT")
+## Install RLT from GitHub
+```{r, eval=FALSE}
+  #Installing RLT
+  library(devtools)
+  install_github("teazrq/RLT")
+  library(RLT)
 ```
 
-# Loading the data  
-See Pull Data.R for the code to create the `.Rdata` file.
+## Load the data  
+Pull breast cancer data from the `.Rdata` file in the data folder. `R` code for pulling data from the NIH official website is provided in `Pull Data.R`. Here, we directly load the `.Rdata` file.
+
 ```{r}
-library(RLT)
-load("Data/GSE2034.Rdata")
-
-Data <- data.frame(X,Y=Y,Censor=Censor)
+  load("Data/GSE2034.Rdata")
+  Data <- data.frame(X,Y=Y,Censor=Censor)
 ```
 
-# Study Introduction: GSE2034  
-[Link](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=gse2034)  
-##Summary  
+## Data Summary
 
->This series represents 180 lymph-node negative relapse free patients and 106 lymph-node negate patients that developed a distant metastasis.
+The data is obtained from the NIH data repository, [Series GSE2034](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=gse2034). This series represents 180 lymph-node negative relapse-free patients, and 106 lymph-node negate patients that developed distant metastasis.
 
-Y. Wang, J. G. Klijn, Y. Zhang, A. M. Sieuwerts, M. P. Look, F. Yang,D. Talantov, M. Timmermans, M. E. Meijer-Van Gelder, J. Yu, T. Jatkoe,E. M. Berns, D. Atkins, J. A. Foekens: Gene-expression profiles to predictdistant metastasis of lymph-node-negative primary breast cancer, Lancet365, 671–679 (2005) doi:10.1016/S0140-6736(05)70933-8
-  
-## Initial Feature Screening: Marginal Screening and Gene Signature  
+> Y. Wang, J. G. Klijn, Y. Zhang, A. M. Sieuwerts, M. P. Look, F. Yang,D. Talantov, M. Timmermans, M. E. Meijer-Van Gelder, J. Yu, T. Jatkoe,E. M. Berns, D. Atkins, J. A. Foekens: Gene-expression profiles to predictdistant metastasis of lymph-node-negative primary breast cancer, Lancet365, 671–679 (2005) doi:10.1016/S0140-6736(05)70933-8
+
+## Initial Feature Screening: Marginal Screening and Gene Signature
+
 Run univariate Cox proportional hazards to find the variables with the most significant marginal relationship to survival.
-```{r}
-weights <- numeric(dim(X)[2])
-for(i in 1:dim(X)[2]){
-  weights[i] <- summary(coxph(Surv(Y, Censor)~X[,i]))$coefficients[5]
-}
+```{r eval = FALSE}
+  weights <- numeric(dim(X)[2])
+  for(i in 1:dim(X)[2]){
+    weights[i] <- summary(coxph(Surv(Y, Censor)~X[,i]))$coefficients[5]
+  }
 
-topX <- colnames(X)[order(weights)[1:500]]
-```
-The Gene_signature.txt file contains a list of the 76 variables included in the gene signature from Wang et al.
-```{r}
-Gene_signature <- read.table("Data/Gene_signature.txt", header=TRUE, quote="\"", stringsAsFactors=FALSE)
-```
-Combined the maginal screening and signature variables and create a reduced X matrix and data.frame.
-```{r}
-combX <- unique(c(topX,Gene_signature$X))
-
-Xr <- X[,colnames(X) %in% combX]
-
-Data <- data.frame(Xr,ER=GSE2034_Clinical$`ER Status`,Y=Y,Censor=Censor)
-
-Xr <- Data[,-c(554:555)]
+  topX <- colnames(X)[order(weights)[1:500]]
 ```
 
-## Data Exploration  
-Fit two initial survival functions based on ER status, which Wang et al. used to stratify their data.  
+The `Gene_signature.txt` file contains a list of the 76 variables included in the gene signature from Wang et al. (2005)
+
 ```{r}
-ERp<-survfit(Surv(Y,Censor)~1,data=Data[GSE2034_Clinical$`ER Status`=="ER+",])
-ERn<-survfit(Surv(Y,Censor)~1,data=Data[GSE2034_Clinical$`ER Status`=="ER-",])
-plot_frame <- data.frame(Time=c(ERp$time,ERn$time),Survival=c(ERp$surv,ERn$surv),C=c(ifelse(ERp$n.censor>0,"Censored",NA),ifelse(ERn$n.censor>0,"Censored",NA)),ER=c(rep("ER+",length(ERp$time)),rep("ER-",length(ERn$time))))
-ggplot(plot_frame,aes(x=Time,y=Survival))+geom_step(aes(x=Time,y=Survival,col=ER),size=1,show.legend = TRUE) + scale_shape_manual(na.translate=FALSE,values="+")+geom_point(aes(shape=C,col=ER),size=5,na.rm = TRUE,show.legend = TRUE, position = "jitter")+scale_color_manual(values=c("darkorange","deepskyblue"))+xlab("log(months)")+ylab("Probability of Survival")+ guides(col = guide_legend(title = "",, override.aes = list( shape='')), shape=guide_legend(title = "", override.aes = list(linetype = 0)))+ylim(0.5,1)+scale_x_log10()
-ggsave("Plots/Zhu_SurvAnalysis_MargbyER.png")
+  Gene_signature <- read.table("Data/Gene_signature.txt", header=TRUE, quote="\"", stringsAsFactors=FALSE)
 ```
 
-Number of failures and failure rate:
-```{r}
-sum(Censor)
-sum(Censor)/length(Censor)
+We combine the marginal screening and signature variables and create a reduced data matrix.
+
+```{r, eval = FALSE}
+  combX <- unique(c(topX, Gene_signature$X))
+  Xr <- X[,colnames(X) %in% combX]
+  Data <- data.frame(Xr, "ER" = GSE2034_Clinical$`ER Status`, "Y" = Y, "Censor" = Censor)
+  Xr <- Data[,-c(554:555)]
 ```
 
-## Model Fitting
-Parameters tested for optimal model
-```{r}
-mtry_ops <- c(sqrt(dim(Xr)[2]+1),(dim(Xr)[2]+1)/3,dim(Xr)[2]+1)
-ns_ops <- c(1,log(length(Y)),log(sum(Censor)))
-param_tunings <- expand.grid(mtry=mtry_ops, ns=ns_ops, split.gen=c("best","random"))
+```{r, include=FALSE}
+  # save(Data, Xr, file = "Data\\SmallData.Rdata")
+  load("Data\\SmallData.Rdata")
 ```
 
-Tuning the model by running through the possible parameters
-```{r}
-param_tunings$oob_err <- NA
-for(i in 1:dim(param_tunings)[1]){
-  set.seed(2+i)
-  fit_ops <- RLT(Xr,Y,Censor, nmin = param_tunings$ns[i], mtry = param_tunings$mtry[i], nsplit = ifelse(param_tunings$split.gen[i]=="best",0,1), split.gen =param_tunings$split.gen[i], ntrees = 1000, importance = FALSE, replacement = TRUE, resample.prob = 1)
-  param_tunings$oob_err[i]<-fit_ops$cindex
-}
+## Data Exploration
 
-mtry_opt <- param_tunings$mtry[param_tunings$oob_err==min(param_tunings$oob_err)]
-ns_opt <- param_tunings$ns[param_tunings$oob_err==min(param_tunings$oob_err)]
-splitgen_opt <- param_tunings$split.gen[param_tunings$oob_err==min(param_tunings$oob_err)]
+Fit two initial survival functions based on ER status, which Wang et al. (2005) used to stratify their data.
+```{r}
+  ERp<-survfit(Surv(Y,Censor)~1, data=Data[GSE2034_Clinical$`ER Status`=="ER+",])
+  ERn<-survfit(Surv(Y,Censor)~1, data=Data[GSE2034_Clinical$`ER Status`=="ER-",])
+  plot_frame <- data.frame(Time = c(ERp$time,ERn$time), Survival = c(ERp$surv,ERn$surv),
+                           C = c(ifelse(ERp$n.censor>0,"Censored",NA),ifelse(ERn$n.censor>0,"Censored",NA)),
+                           ER = c(rep("ER+",length(ERp$time)),rep("ER-",length(ERn$time))))
+
+  ggplot(plot_frame,aes(x=Time,y=Survival)) + 
+    geom_step(aes(x=Time,y=Survival,col=ER),size=1,show.legend = TRUE) +
+    scale_shape_manual(na.translate=FALSE,values="+") +
+    geom_point(aes(shape=C,col=ER),size=5,na.rm = TRUE,show.legend = TRUE, position = "jitter") +
+    scale_color_manual(values=c("darkorange","deepskyblue")) +
+    xlab("log(months)") + 
+    ylab("Probability of Survival") + 
+    guides(col = guide_legend(title = "", override.aes = list( shape='')), 
+           shape = guide_legend(title = "", override.aes = list(linetype = 0))) +
+    ylim(0.5,1)+scale_x_log10()
+  
+  ggsave("Results/GSE2034_MargbyER.png")
+```
+
+The number of failures and failure rate:
+```{r}
+  sum(Censor)
+  sum(Censor)/length(Censor)
+```
+
+## Model Fitting using Random Forests
+
+Parameters tested for optimal model.
+
+```{r}
+  n = nrow(Xr)
+  p = ncol(Xr)
+  
+  param_tunings <- expand.grid(mtry = c(sqrt(p), p/3, p),
+                               nmin = c(1, log(n), n^(1/3)),
+                               split.gen=c("best","random"))
+  param_tunings$oob_err <- NA
+```
+
+We tune the model by running through all possible parameter combinations. For computational concern, we use the out-of-bag c-index as the selection criterion. 
+
+```{r, results="hide", eval = FALSE}
+  library(parallel)
+  ncores = detectCores()
+  
+  for(i in 1:dim(param_tunings)[1])
+  {
+    cat(paste("Setting ", i, " ... \n"))
+    set.seed(2+i)
+    
+    fit_ops <- RLT(Xr, Y, Censor, ntrees = 1000,
+                   nmin = param_tunings$nmin[i], 
+                   mtry = param_tunings$mtry[i], 
+                   split.gen = param_tunings$split.gen[i],
+                   nsplit = ifelse(param_tunings$split.gen[i]=="best", 0, 1),
+                   ncores = ncores)
+    
+    param_tunings$oob_err[i]<-fit_ops$cindex
+
+  }
+```
+
+```{r, include=FALSE}
+  # save(param_tunings, file = "Data\\Tunings.Rdata")
+  load("Data\\Tunings.Rdata")
 ```
 
 The optimal parameters
 ```{r}
-param_tunings
-mtry_opt
-ns_opt
-splitgen_opt
-max(param_tunings$oob_err)/min(param_tunings$oob_err)
+  besttunings = param_tunings[which.max(param_tunings$oob_err), ]
+  
+  mtry_opt <- besttunings$mtry
+  nmin_opt <- besttunings$nmin
+  splitgen_opt <- besttunings$split.gen
+  
+  param_tunings
+  mtry_opt
+  nmin_opt
+  splitgen_opt
+  max(param_tunings$oob_err)/min(param_tunings$oob_err)
 ```
 
-Fitting the optimal model
-```{r,cache=FALSE}
-fit_opt <- RLT(Xr,Y,Censor, nmin = ns_opt, mtry = mtry_opt, nsplit = ifelse(splitgen_opt=="best",0,1),
-               split.gen =splitgen_opt, ntrees = 1000, importance = TRUE, replacement = TRUE, resample.prob=1)
-pred_opt <- predict(fit_opt)
+We fit the optimal model. Please note that due to the randomness of random forests, we may end up with slightly different results each time this is refitted. The best strategy is to use a large number of trees or set a random seed. 
+
+```{r, eval=FALSE}
+  fit_opt <- RLT(Xr, Y, Censor, ntrees = 5000, nmin = nmin_opt, mtry = mtry_opt, 
+                 nsplit = ifelse(splitgen_opt=="best",0,1), split.gen = splitgen_opt, 
+                 importance = TRUE, ncores = ncores)
 ```
 
-##Variable importance  
+```{r, include=FALSE}
+  # save(fit_opt, file = "Data\\FinalModel.Rdata")
+  load("Data\\FinalModel.Rdata")
+```
+
+##Variable importance
+
 Finding the top variable
 ```{r,cache=FALSE}
-VI1 <- colnames(Xr)[fit_opt$VarImp==max(fit_opt$VarImp)][1]
-VI1
+  VI1 <- colnames(Xr)[fit_opt$VarImp==max(fit_opt$VarImp)][1]
+  VI1
 ```
 
 Plotting the top 40 variable importance
 ```{r,cache=FALSE}
-VI <- data.frame(id=c(1:(dim(Xr)[2])),variable=substring(colnames(Xr),2),vi=fit_opt$VarImp,signature=c(colnames(Xr))%in%paste0("X",Gene_signature$X))
-VI <- VI[order(VI$vi),]
-VI$ord <- c(1:(dim(Xr)[2]))
-VI$variable <- factor(VI$variable, levels = VI$variable[order(VI$vi)])
-head(VI)
-tail(VI)
-
-ggplot(VI[(dim(VI)[1]-20):dim(VI)[1],],aes(x=variable,y=vi,fill=signature))+geom_col(width = 0.5,show.legend = TRUE)+scale_fill_manual(values=c("darkorange","deepskyblue"))+ylab("Variable Importance")+xlab("Top 20 Variables by Variable Importance")+coord_flip() + guides(fill = guide_legend(title = "Included in Wang et al. 76 Gene Signature"))
-ggsave("Plots/Zhu_SurvAnalysis_Top20VI.png")
-
-ggplot(VI[(dim(VI)[1]-40):dim(VI)[1],],aes(x=variable,y=vi,fill=signature))+geom_col(width = 0.5,show.legend = TRUE)+scale_fill_manual(values=c("darkorange","deepskyblue"))+ylab("Variable Importance")+xlab("Top 40 Variables by Variable Importance")+coord_flip() + guides(fill = guide_legend(title = "Included in Wang et al. 76 Gene Signature"))
-ggsave("Plots/Zhu_SurvAnalysis_Top40VI.png")
+  VI <- data.frame("id" = c(1:p), "variable" = substring(colnames(Xr), 2), 
+                   "vi" = fit_opt$VarImp, "signature" = c(colnames(Xr)) %in% paste0("X",Gene_signature$X))
+  VI <- VI[order(VI$vi),]
+  VI$ord <- c(1:(dim(Xr)[2]))
+  VI$variable <- factor(VI$variable, levels = VI$variable[order(VI$vi)])
+  head(VI)
+  tail(VI)
+  
+  ggplot(VI[(dim(VI)[1]-20):dim(VI)[1],],aes(x=variable,y=vi,fill=signature)) +
+    geom_col(width = 0.5,show.legend = TRUE) +
+    scale_fill_manual(values=c("darkorange","deepskyblue")) +
+    ylab("Variable Importance")+xlab("Top 20 Variables by Variable Importance") +
+    coord_flip() + 
+    guides(fill = guide_legend(title = "Included in Wang et al. 76 Gene Signature"))
+  
+  ggsave("Results/GSE2034_Top20VI.png")
+  
+  ggplot(VI[(dim(VI)[1]-40):dim(VI)[1],],aes(x=variable,y=vi,fill=signature)) +
+    geom_col(width = 0.5,show.legend = TRUE) +
+    scale_fill_manual(values=c("darkorange","deepskyblue")) +
+    ylab("Variable Importance")+xlab("Top 40 Variables by Variable Importance") +
+    coord_flip() + 
+    guides(fill = guide_legend(title = "Included in Wang et al. 76 Gene Signature"))
+  
+  ggsave("Results/GSE2034_Top40VI.png")
 ```
 
-## Plotting survival curves  
-Reshaping the survival curves so they can be more easily plotted
+## Plotting survival curves
+
+Reshaping the survival curves so they can be easily plotted.
 ```{r}
-surv_oob <- sapply(c(1:dim(fit_opt$OOBPrediction)[1]),function(i) exp(-cumsum(fit_opt$OOBPrediction[i,])))
-surv <- data.frame(fit_opt$timepoints,surv_oob)
-melted <- melt(surv,1)
-truth <- data.frame(subj=paste0("X",c(1:dim(Xr)[1])),Y=Data[,"Y"],ER=Data[,553],MaxVar=Data[,VI1])
-colnames(melted) <- c("Time", "Subject", "Probability")
-melted <- merge(melted, truth, by.x="Subject", by.y="subj",all.x=TRUE)
+  # calculate the survival curve since the output is hazard function
+  surv_oob <- sapply(c(1:dim(fit_opt$OOBPrediction)[1]), function(i) exp(-cumsum(fit_opt$OOBPrediction[i,])))
+  surv <- data.frame(fit_opt$timepoints,surv_oob)
+  melted <- melt(surv,1)
+  truth <- data.frame(subj=paste0("X",c(1:n)),Y=Data[,"Y"],ER=Data[,553],MaxVar=Data[,VI1])
+  colnames(melted) <- c("Time", "Subject", "Probability")
+  melted <- merge(melted, truth, by.x="Subject", by.y="subj", all.x=TRUE)
 ```
 
 Pulling the subjects within ER+ and ER- which have the highest and lowest values of the most important variable.
 ```{r}
-ERnL<-which(Data[[VI1]]==min(Data[[VI1]][Data$ER=="ER-"&Censor==1]))[1]
-ERpL<-which(Data[[VI1]]==min(Data[[VI1]][Data$ER=="ER+"&Censor==1]))[1]
-ERnH<-which(Data[[VI1]]==max(Data[[VI1]][Data$ER=="ER-"&Censor==1]))[1]
-ERpH<-which(Data[[VI1]]==max(Data[[VI1]][Data$ER=="ER+"&Censor==1]))[1]
-c(ERnL,ERpL,ERnH,ERpH)
-
-Lev <- data.frame(Subject=paste0("X",c(ERnL,ERpL,ERnH,ERpH)), Level=c("ER-/Low","ER+/Low","ER-/High","ER+/High"))
-
-melted2 <- melted[melted$Subject %in% paste0("X",c(ERnL,ERpL,ERnH,ERpH)),]
-melted2$Level <- sapply(as.character(melted2$Subject),function(s) Lev$Level[Lev$Subject==s])
-
-ggplot(melted2,aes(x=Time,y=Probability))+geom_step(aes(group=Subject,col=Level),show.legend = TRUE,size=1.5)+ylab("Probability of Survival")+xlab("log(months)")+scale_x_log10() + guides(col = guide_legend(title = paste0("ER Status/ ",substring(VI1,2) ," Level")))
-ggsave("Plots/Zhu_SurvAnalysis_TestPredsStrat.png")
-```
-
-## Error calculations  
-Brier Score and C-index functions
-```{r}
-Brier_Score <- function(surv, Censor, Ytest, tmpts){
-  KM <- survfit(Surv(Ytest,!Censor)~1)#Estimation of Censoring Distribution
-  BS <- numeric(length(tmpts))
-  for(tm in 1:length(tmpts)){
-    s<-0
-    indt <- max(c(c(1:length(KM$time))[KM$time<=tmpts[tm]],1))
-    inds <- numeric(length(Ytest))
-    if(indt<0) indt <- 1
-    for(i in 1:length(Ytest)){
-      ind <- max(c(1:length(KM$time))[KM$time<=Ytest[i]])
-      if(ind<0){
-        ind <- 1
-      }
-      inds[i] <- ind
-    }
-    s1 <- surv[,tm]^2*(Ytest<tmpts[tm]&Censor)/KM$surv[inds]
-    s1 <- ifelse(is.nan(s1),0,s1)
-    s2<-(1-surv[,tm])^2*(Ytest>tmpts[tm])/KM$surv[indt]
-    BS[tm] <- (sum(s1)+sum(s2))/length(Ytest)
-  }
-  IBS <- sum(BS*diff(c(0,tmpts)))/max(tmpts)
-  IBS
-}
-
-C_index <- function(surv, Censor, Ytest){
-  surv_temp <- surv
-  while(any(surv[,dim(surv_temp)[2]]==0)){
-    surv_temp <- surv_temp[,-dim(surv_temp)]
-  }
-  Mi <- apply(surv_temp, 1, function(r) sum(-log(r)))
-  prs <- data.frame(t(combn(length(Ytest),2)))
-  prs$P1 <- Ytest[prs[,1]]
-  prs$P2 <- Ytest[prs[,2]]
-  prs$P1C <- Censor[prs[,1]]
-  prs$P2C <- Censor[prs[,2]]
-  prs$M1 <- Mi[prs[,1]]
-  prs$M2 <- Mi[prs[,2]]
-  prs <- prs[(prs$P1 != prs$P2)|(prs$P2C==TRUE | prs$P1C==TRUE),]
-  prs$P1_l_P2 <- prs$P1 < prs$P2
-  prs <- prs[!(prs$P1C==FALSE & prs$P1_l_P2),]
-  prs$P2_l_P1 <- prs$P2 < prs$P1
-  prs <- prs[!(prs$P2C==FALSE & prs$P2_l_P1),]
-  prs$P1_e_P2 <- prs$P2 == prs$P1
-  prs$Con <- 0
-  prs[(prs$P1_l_P2==TRUE & (prs$M2<prs$M1))|(prs$P2_l_P1==TRUE & (prs$M2>prs$M1)),"Con"] <- 1
-  prs[prs$P1_e_P2!=TRUE & (prs$M2==prs$M1),"Con"] <- 0.5
-  prs[prs$P1_e_P2==TRUE & (prs$M2==prs$M1),"Con"] <- 1
-  prs[prs$P1_e_P2==TRUE & (prs$M2!=prs$M1),"Con"] <- 0.5
-  1-mean(prs$Con)
-}
-```
-
-Final model calculations
-```{r}
-C_index(t(surv_oob),Censor,Y)
-Brier_Score(t(surv_oob),Censor,Y,fit_opt$timepoints)
+  ERnL<-which(Data[[VI1]]==min(Data[[VI1]][Data$ER=="ER-"&Censor==1]))[1]
+  ERpL<-which(Data[[VI1]]==min(Data[[VI1]][Data$ER=="ER+"&Censor==1]))[1]
+  ERnH<-which(Data[[VI1]]==max(Data[[VI1]][Data$ER=="ER-"&Censor==1]))[1]
+  ERpH<-which(Data[[VI1]]==max(Data[[VI1]][Data$ER=="ER+"&Censor==1]))[1]
+  
+  Lev <- data.frame(Subject=paste0("X",c(ERnL,ERpL,ERnH,ERpH)), Level=c("ER- / Low","ER+ / Low","ER- / High","ER+ / High"))
+  
+  melted2 <- melted[melted$Subject %in% paste0("X",c(ERnL,ERpL,ERnH,ERpH)),]
+  melted2$Level <- sapply(as.character(melted2$Subject),function(s) Lev$Level[Lev$Subject==s])
+  
+  ggplot(melted2,aes(x=Time,y=Probability)) +
+    geom_step(aes(group=Subject,col=Level),show.legend = TRUE,size=1.5) +
+    ylab("Probability of Survival")+xlab("log(months)") +
+    scale_x_log10() + 
+    guides(col = guide_legend(title = paste0("ER Status / ",substring(VI1,2) ," Level")))
+  
+  ggsave("Results/GSE2034_TestPredsStrat.png")
 ```
