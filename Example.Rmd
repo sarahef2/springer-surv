@@ -102,27 +102,33 @@ max(param_tunings$oob_err)/min(param_tunings$oob_err)
 ```
 
 Fitting the optimal model
-```{r}
-fit_opt <- RLT(Xr,Y,Censor, nmin =ns_opt, mtry = mtry_opt, nsplit = ifelse(splitgen_opt=="best",0,1), split.gen =splitgen_opt, ntrees = 1000, importance = TRUE, replacement = TRUE, resample.prob = 1)
+```{r,cache=FALSE}
+fit_opt <- RLT(Xr,Y,Censor, nmin = ns_opt, mtry = mtry_opt, nsplit = ifelse(splitgen_opt=="best",0,1),
+               split.gen =splitgen_opt, ntrees = 1000, importance = TRUE, replacement = TRUE, resample.prob=1)
 pred_opt <- predict(fit_opt)
 ```
 
 ##Variable importance  
 Finding the top variable
-```{r}
-VI1 <- c(paste0(colnames(Xr)))[fit_opt$VarImp==max(fit_opt$VarImp)][1]
+```{r,cache=FALSE}
+VI1 <- colnames(Xr)[fit_opt$VarImp==max(fit_opt$VarImp)][1]
 VI1
 ```
 
-Plotting the top 20 variable importance
-```{r}
-VI <- data.frame(id=c(1:(dim(Xr)[2])),variable=substring(colnames(Xr),2),vi=fit_opt$VarImp+1,signature=c(colnames(Xr))%in%paste0("X",Gene_signature$X))
+Plotting the top 40 variable importance
+```{r,cache=FALSE}
+VI <- data.frame(id=c(1:(dim(Xr)[2])),variable=substring(colnames(Xr),2),vi=fit_opt$VarImp,signature=c(colnames(Xr))%in%paste0("X",Gene_signature$X))
 VI <- VI[order(VI$vi),]
 VI$ord <- c(1:(dim(Xr)[2]))
 VI$variable <- factor(VI$variable, levels = VI$variable[order(VI$vi)])
+head(VI)
+tail(VI)
 
 ggplot(VI[(dim(VI)[1]-20):dim(VI)[1],],aes(x=variable,y=vi,fill=signature))+geom_col(width = 0.5,show.legend = TRUE)+scale_fill_manual(values=c("darkorange","deepskyblue"))+ylab("Variable Importance")+xlab("Top 20 Variables by Variable Importance")+coord_flip() + guides(fill = guide_legend(title = "Included in Wang et al. 76 Gene Signature"))
 ggsave("Plots/Zhu_SurvAnalysis_Top20VI.png")
+
+ggplot(VI[(dim(VI)[1]-40):dim(VI)[1],],aes(x=variable,y=vi,fill=signature))+geom_col(width = 0.5,show.legend = TRUE)+scale_fill_manual(values=c("darkorange","deepskyblue"))+ylab("Variable Importance")+xlab("Top 40 Variables by Variable Importance")+coord_flip() + guides(fill = guide_legend(title = "Included in Wang et al. 76 Gene Signature"))
+ggsave("Plots/Zhu_SurvAnalysis_Top40VI.png")
 ```
 
 ## Plotting survival curves  
@@ -149,7 +155,7 @@ Lev <- data.frame(Subject=paste0("X",c(ERnL,ERpL,ERnH,ERpH)), Level=c("ER-/Low",
 melted2 <- melted[melted$Subject %in% paste0("X",c(ERnL,ERpL,ERnH,ERpH)),]
 melted2$Level <- sapply(as.character(melted2$Subject),function(s) Lev$Level[Lev$Subject==s])
 
-ggplot(melted2,aes(x=Time,y=Probability))+geom_step(aes(group=Subject,col=Level),show.legend = TRUE,size=1.5)+ylab("Probability of Survival")+xlab("log(months)")+scale_x_log10() + guides(col = guide_legend(title = "ER Status/ 209096_at Level"))
+ggplot(melted2,aes(x=Time,y=Probability))+geom_step(aes(group=Subject,col=Level),show.legend = TRUE,size=1.5)+ylab("Probability of Survival")+xlab("log(months)")+scale_x_log10() + guides(col = guide_legend(title = paste0("ER Status/ ",VI1 ,"Level")))
 ggsave("Plots/Zhu_SurvAnalysis_TestPredsStrat.png")
 ```
 

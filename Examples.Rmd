@@ -67,7 +67,7 @@ Xr <- X[,colnames(X) %in% combX]
 Data <- data.frame(Xr,ER=GSE2034_Clinical$`ER Status`,Y=Y,Censor=Censor)
 ```
 
-```{r}
+```{r,cache=FALSE}
 library(randomForestSRC)
 #Tuning
 mtry_ops <- c(sqrt(dim(Xr)[2]+1),(dim(Xr)[2]+1)/3,dim(Xr)[2]+1)
@@ -89,14 +89,15 @@ ns_opt <- param_tunings$ns[param_tunings$oob_err==min(param_tunings$oob_err)]
 nsplit_opt <- param_tunings$nsplit[param_tunings$oob_err==min(param_tunings$oob_err)]
 ```
 
-```{r}
-fit_opt <- rfsrc(Surv(Y,Censor)~., data = Data, nodesize =ns_opt, mtry = mtry_opt, nsplit = nsplit_opt, ntree = 1000, importance = TRUE, samptype = "swr", sampsize = dim(Data)[1])
+```{r,cache=FALSE}
+fit_opt <- rfsrc(Surv(Y,Censor)~., data = Data, nodesize =10, mtry = mtry_opt, nsplit = nsplit_opt, ntree = 1000, importance = TRUE, samptype = "swr", sampsize = dim(Data)[1])
 pred_opt <- predict(fit_opt, outcome = "train")
 fit_opt
 pred_opt
 ```
 
-```{r}
+```{r,cache=FALSE}
+library(ggplot2)
 VI1 <- c(paste0("X",colnames(Xr)),"ER")[fit_opt$importance==max(fit_opt$importance)][1]
 VI1
 
@@ -114,7 +115,8 @@ ggplot(melted1,aes(x=Time,y=Probability))+geom_step(aes(col=Subject),show.legend
 ggsave("Plots/Zhu_SurvAnalysis_TestPreds.png")
 ```
 
-```{r}
+```{r,cache=FALSE}
+library(ggplot2)
 VI <- data.frame(id=c(1:(dim(Xr)[2]+1)),variable=c(colnames(Xr),"ER"),vi=fit_opt$importance,signature=c(colnames(Xr),"ER")%in%Gene_signature$X)
 VI <- VI[order(VI$vi),]
 VI$ord <- c(1:(dim(Xr)[2]+1))
@@ -203,6 +205,7 @@ Brier_Score(fit_opt$survival.oob,Censor,Y,fit_opt$time.interest)
 ```
 
 ```{r}
+library(ggplot2)
 ERnL<-which(Data[[VI1]]==min(Data[[VI1]][Data$ER=="ER-"&Censor==1]))[1]
 ERpL<-which(Data[[VI1]]==min(Data[[VI1]][Data$ER=="ER+"&Censor==1]))[1]
 ERnH<-which(Data[[VI1]]==max(Data[[VI1]][Data$ER=="ER-"&Censor==1]))[1]
