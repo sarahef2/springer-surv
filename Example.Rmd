@@ -9,13 +9,20 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE,cache = TRUE)
 library(survival)
 library(ggplot2)
-library(RLT)
 library(reshape2)
+```
+
+#Installing RLT  
+```{r,eval=FALSE}
+#Installing RLT
+library(devtools)
+install_github("teazrq/RLT")
 ```
 
 # Loading the data  
 See Pull Data.R for the code to create the `.Rdata` file.
 ```{r}
+library(RLT)
 load("Data/GSE2034.Rdata")
 
 Data <- data.frame(X,Y=Y,Censor=Censor)
@@ -60,7 +67,7 @@ Fit two initial survival functions based on ER status, which Wang et al. used to
 ERp<-survfit(Surv(Y,Censor)~1,data=Data[GSE2034_Clinical$`ER Status`=="ER+",])
 ERn<-survfit(Surv(Y,Censor)~1,data=Data[GSE2034_Clinical$`ER Status`=="ER-",])
 plot_frame <- data.frame(Time=c(ERp$time,ERn$time),Survival=c(ERp$surv,ERn$surv),C=c(ifelse(ERp$n.censor>0,"Censored",NA),ifelse(ERn$n.censor>0,"Censored",NA)),ER=c(rep("ER+",length(ERp$time)),rep("ER-",length(ERn$time))))
-ggplot(plot_frame,aes(x=Time,y=Survival))+geom_step(aes(x=Time,y=Survival,col=ER),size=1,show.legend = TRUE) + scale_shape_manual(na.translate=FALSE,values="+")+geom_point(aes(shape=C,col=ER),size=5,na.rm = TRUE,show.legend = TRUE, position = "jitter")+scale_color_manual(values=c("darkorange","deepskyblue"))+xlab("log(months)")+ylab("Probability of Survival")+ guides(col = guide_legend(title = ""), shape=guide_legend(title = ""))+ylim(0.5,1)+scale_x_log10()
+ggplot(plot_frame,aes(x=Time,y=Survival))+geom_step(aes(x=Time,y=Survival,col=ER),size=1,show.legend = TRUE) + scale_shape_manual(na.translate=FALSE,values="+")+geom_point(aes(shape=C,col=ER),size=5,na.rm = TRUE,show.legend = TRUE, position = "jitter")+scale_color_manual(values=c("darkorange","deepskyblue"))+xlab("log(months)")+ylab("Probability of Survival")+ guides(col = guide_legend(title = "",, override.aes = list( shape='')), shape=guide_legend(title = "", override.aes = list(linetype = 0)))+ylim(0.5,1)+scale_x_log10()
 ggsave("Plots/Zhu_SurvAnalysis_MargbyER.png")
 ```
 
@@ -155,7 +162,7 @@ Lev <- data.frame(Subject=paste0("X",c(ERnL,ERpL,ERnH,ERpH)), Level=c("ER-/Low",
 melted2 <- melted[melted$Subject %in% paste0("X",c(ERnL,ERpL,ERnH,ERpH)),]
 melted2$Level <- sapply(as.character(melted2$Subject),function(s) Lev$Level[Lev$Subject==s])
 
-ggplot(melted2,aes(x=Time,y=Probability))+geom_step(aes(group=Subject,col=Level),show.legend = TRUE,size=1.5)+ylab("Probability of Survival")+xlab("log(months)")+scale_x_log10() + guides(col = guide_legend(title = paste0("ER Status/ ",VI1 ,"Level")))
+ggplot(melted2,aes(x=Time,y=Probability))+geom_step(aes(group=Subject,col=Level),show.legend = TRUE,size=1.5)+ylab("Probability of Survival")+xlab("log(months)")+scale_x_log10() + guides(col = guide_legend(title = paste0("ER Status/ ",substring(VI1,2) ," Level")))
 ggsave("Plots/Zhu_SurvAnalysis_TestPredsStrat.png")
 ```
 
