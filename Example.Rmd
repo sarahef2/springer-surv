@@ -111,7 +111,7 @@ Parameters tested for optimal model.
   param_tunings$oob_err <- NA
 ```
 
-We tune the model by running through all possible parameter combinations. For computational concern, we use the out-of-bag c-index as the selection criterion. 
+We tune the model by running through all possible parameter combinations. For computational reasons, we use the out-of-bag c-index as the selection criterion. 
 
 ```{r, results="hide", eval = FALSE}
   library(parallel)
@@ -163,7 +163,7 @@ We fit the optimal model. Please note that due to the randomness of random fores
 ```
 
 ```{r, include=FALSE}
-  # save(fit_opt, file = "Data\\FinalModel.Rdata")
+  #save(fit_opt, file = "Data\\FinalModel.Rdata")
   load("Data\\FinalModel.Rdata")
 ```
 
