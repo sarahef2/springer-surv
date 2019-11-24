@@ -7,7 +7,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-  knitr::opts_chunk$set(echo = TRUE,cache = TRUE)
+  knitr::opts_chunk$set(echo = TRUE)
   library(survival)
   library(ggplot2)
   library(reshape2)
@@ -111,7 +111,7 @@ Parameters tested for optimal model.
   param_tunings$oob_err <- NA
 ```
 
-We tune the model by running through all possible parameter combinations. For computational concern, we use the out-of-bag c-index as the selection criterion. 
+We tune the model by running through all possible parameter combinations. For computational reasons, we use the out-of-bag c-index as the selection criterion. 
 
 ```{r, results="hide", eval = FALSE}
   library(parallel)
@@ -135,13 +135,13 @@ We tune the model by running through all possible parameter combinations. For co
 ```
 
 ```{r, include=FALSE}
-  # save(param_tunings, file = "Data\\Tunings.Rdata")
+  # save(param_tunings, file = "Data\\Tunings.Rdata") 
   load("Data\\Tunings.Rdata")
 ```
 
 The optimal parameters
 ```{r}
-  besttunings = param_tunings[which.max(param_tunings$oob_err), ]
+  besttunings = param_tunings[which.max(param_tunings$oob_err), ] 
   
   mtry_opt <- besttunings$mtry
   nmin_opt <- besttunings$nmin
@@ -152,6 +152,7 @@ The optimal parameters
   nmin_opt
   splitgen_opt
   max(param_tunings$oob_err)/min(param_tunings$oob_err)
+  (1-min(param_tunings$oob_err))/(1-max(param_tunings$oob_err))
 ```
 
 We fit the optimal model. Please note that due to the randomness of random forests, we may end up with slightly different results each time this is refitted. The best strategy is to use a large number of trees or set a random seed. 
@@ -163,7 +164,7 @@ We fit the optimal model. Please note that due to the randomness of random fores
 ```
 
 ```{r, include=FALSE}
-  # save(fit_opt, file = "Data\\FinalModel.Rdata")
+  #save(fit_opt, file = "Data\\FinalModel.Rdata")
   load("Data\\FinalModel.Rdata")
 ```
 
