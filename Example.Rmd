@@ -1,9 +1,10 @@
 ---
-title: "Random Forests for Survival Analysis and High-Dimensional Data: R Examples"
-author: "Sarah Formentini and Ruoqing Zhu"
+title: "Random Forests for Survival Analysis and High-Dimensional Data: R Example"
+author: "Sarah Formentini, Yifan Cui, and Ruoqing Zhu"
 date: "Last Updated: `r format(Sys.time(), '%B %d, %Y')`"
-abstract: "This is the supplementary `R` file for Random Forests for Survival Analysis and High-Dimensional Data in Springer Handbook of Engineering Statistics."
+abstract: "This is one of the two supplementary `R` files for Random Forests for Survival Analysis and High-Dimensional Data in Springer Handbook of Engineering Statistics."
 output: html_document
+bibliography: ExFig_bib.bib
 ---
 
 ```{r setup, include=FALSE}
@@ -11,8 +12,12 @@ output: html_document
   library(survival)
   library(ggplot2)
   library(reshape2)
+  library(RLT)
+  library(MASS)
+
 ```
 
+# Setup  
 ## Install RLT from GitHub
 ```{r, eval=FALSE}
   #Installing RLT
@@ -20,7 +25,8 @@ output: html_document
   install_github("teazrq/RLT")
   library(RLT)
 ```
-
+  
+# High-Dimensional Example   
 ## Load the data  
 Pull breast cancer data from the `.Rdata` file in the data folder. `R` code for pulling data from the NIH official website is provided in `Pull Data.R`. Here, we directly load the `.Rdata` file.
 
@@ -31,9 +37,8 @@ Pull breast cancer data from the `.Rdata` file in the data folder. `R` code for 
 
 ## Data Summary
 
-The data is obtained from the NIH data repository, [Series GSE2034](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=gse2034). This series represents 180 lymph-node negative relapse-free patients, and 106 lymph-node negate patients that developed distant metastasis.
+The data is obtained from the NIH data repository, [Series GSE2034](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=gse2034) [@Wang2005]. This series represents 180 lymph-node negative relapse-free patients, and 106 lymph-node negate patients that developed distant metastasis.
 
-> Y. Wang, J. G. Klijn, Y. Zhang, A. M. Sieuwerts, M. P. Look, F. Yang,D. Talantov, M. Timmermans, M. E. Meijer-Van Gelder, J. Yu, T. Jatkoe,E. M. Berns, D. Atkins, J. A. Foekens: Gene-expression profiles to predictdistant metastasis of lymph-node-negative primary breast cancer, Lancet365, 671–679 (2005) doi:10.1016/S0140-6736(05)70933-8
 
 ## Initial Feature Screening: Marginal Screening and Gene Signature
 
@@ -82,7 +87,7 @@ Fit two initial survival functions based on ER status, which Wang et al. (2005) 
     scale_shape_manual(na.translate=FALSE,values="+") +
     geom_point(aes(shape=C,col=ER),size=5,na.rm = TRUE,show.legend = TRUE, position = "jitter") +
     scale_color_manual(values=c("darkorange","deepskyblue")) +
-    xlab("log(months)") + 
+    xlab("Time (months)") + 
     ylab("Probability of Survival") + 
     guides(col = guide_legend(title = "", override.aes = list( shape='')), 
            shape = guide_legend(title = "", override.aes = list(linetype = 0))) +
@@ -101,13 +106,14 @@ The number of failures and failure rate:
 
 Parameters tested for optimal model.
 
-```{r}
+```{r,cache=FALSE}
   n = nrow(Xr)
   p = ncol(Xr)
   
   param_tunings <- expand.grid(mtry = c(sqrt(p), p/3, p),
                                nmin = c(1, log(n), n^(1/3)),
-                               split.gen=c("best","random"))
+                   split.rule = c("suplogrank","logrank"),
+                   split.gen=c("best","random"))
   param_tunings$oob_err <- NA
 ```
 
@@ -122,10 +128,11 @@ We tune the model by running through all possible parameter combinations. For co
     cat(paste("Setting ", i, " ... \n"))
     set.seed(2+i)
     
-    fit_ops <- RLT(Xr, Y, Censor, ntrees = 1000,
+    fit_ops <- RLT(Xr, Y, Censor, ntrees = 20000,
                    nmin = param_tunings$nmin[i], 
                    mtry = param_tunings$mtry[i], 
                    split.gen = param_tunings$split.gen[i],
+                   split.rule = as.character(param_tunings$split.rule[i]),
                    nsplit = ifelse(param_tunings$split.gen[i]=="best", 0, 1),
                    ncores = ncores)
     
@@ -135,8 +142,8 @@ We tune the model by running through all possible parameter combinations. For co
 ```
 
 ```{r, include=FALSE}
-  # save(param_tunings, file = "Data\\Tunings.Rdata") 
-  load("Data\\Tunings.Rdata")
+  #save(param_tunings, file = "Data\\Tunings20000.Rdata") 
+  load("Data\\Tunings20000.Rdata")
 ```
 
 The optimal parameters
@@ -146,11 +153,13 @@ The optimal parameters
   mtry_opt <- besttunings$mtry
   nmin_opt <- besttunings$nmin
   splitgen_opt <- besttunings$split.gen
+  splitrule_opt <- besttunings$split.rule
   
   param_tunings
   mtry_opt
   nmin_opt
   splitgen_opt
+  splitrule_opt
   max(param_tunings$oob_err)/min(param_tunings$oob_err)
   (1-min(param_tunings$oob_err))/(1-max(param_tunings$oob_err))
 ```
@@ -158,14 +167,18 @@ The optimal parameters
 We fit the optimal model. Please note that due to the randomness of random forests, we may end up with slightly different results each time this is refitted. The best strategy is to use a large number of trees or set a random seed. 
 
 ```{r, eval=FALSE}
-  fit_opt <- RLT(Xr, Y, Censor, ntrees = 5000, nmin = nmin_opt, mtry = mtry_opt, 
-                 nsplit = ifelse(splitgen_opt=="best",0,1), split.gen = splitgen_opt, 
+  library(parallel)
+  ncores = detectCores()
+  fit_opt <- RLT(Xr, Y, Censor, ntrees = 20000, nmin = nmin_opt, mtry = mtry_opt, 
+                 nsplit = ifelse(splitgen_opt=="best",0,1), 
+                 split.gen = as.character(splitgen_opt), 
+                 split.rule = as.character(splitrule_opt),
                  importance = TRUE, ncores = ncores)
 ```
 
 ```{r, include=FALSE}
-  #save(fit_opt, file = "Data\\FinalModel.Rdata")
-  load("Data\\FinalModel.Rdata")
+  #save(fit_opt, file = "Data\\FinalModel20000.Rdata")
+  load("Data\\FinalModel20000.Rdata")
 ```
 
 ##Variable importance
@@ -183,6 +196,7 @@ Plotting the top 40 variable importance
   VI <- VI[order(VI$vi),]
   VI$ord <- c(1:(dim(Xr)[2]))
   VI$variable <- factor(VI$variable, levels = VI$variable[order(VI$vi)])
+  VI$color <- c(dim(VI)[1]:1) %in% c(1:40)
   head(VI)
   tail(VI)
   
@@ -232,9 +246,11 @@ Pulling the subjects within ER+ and ER- which have the highest and lowest values
   
   ggplot(melted2,aes(x=Time,y=Probability)) +
     geom_step(aes(group=Subject,col=Level),show.legend = TRUE,size=1.5) +
-    ylab("Probability of Survival")+xlab("log(months)") +
+    ylab("Probability of Survival")+xlab("Time (months)") +
     scale_x_log10() + 
     guides(col = guide_legend(title = paste0("ER Status / ",substring(VI1,2) ," Level")))
   
   ggsave("Results/GSE2034_TestPredsStrat.png")
 ```
+
+# References  

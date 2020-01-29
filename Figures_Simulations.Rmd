@@ -1,0 +1,252 @@
+---
+title: "Random Forests for Survival Analysis and High-Dimensional Data: Figures and Simulations"
+author: "Sarah Formentini, Yifan Cui, and Ruoqing Zhu"
+date: "Last Updated: `r format(Sys.time(), '%B %d, %Y')`"
+abstract: "This is one of the two supplementary `R` files for Random Forests for Survival Analysis and High-Dimensional Data in Springer Handbook of Engineering Statistics."
+output: html_document
+bibliography: ExFig_bib.bib
+---
+
+```{r setup, include=FALSE}
+  knitr::opts_chunk$set(echo = TRUE)
+  library(survival)
+  library(ggplot2)
+  library(reshape2)
+  library(RLT)
+  library(MASS)
+
+```
+
+# Setup  
+## Install RLT from GitHub
+```{r, eval=FALSE}
+  #Installing RLT
+  library(devtools)
+  install_github("teazrq/RLT")
+  library(RLT)
+```
+  
+# Figures and Simulations  
+## Proportional hazards demonstration  
+Proportional hazards plot. The two exponential distributions Exp(1) and Exp(2) have proportional hazards. 
+```{r}
+n<-50
+X <- c(rep(1,n),rep(2,n))
+Y <- rexp(n,X)
+df <- data.frame(X,Y)
+df$tm <- c(rep(seq(0,5,length.out = n),2))
+df$true <- 1-pexp(df$tm,df$X)
+
+ggplot(df)+geom_line(aes(x=tm,y=true,group=as.factor(X),col=as.factor(X)),size=1.5)+
+  scale_color_manual(values=c("darkorange","deepskyblue")) +
+    xlab("Time") + 
+    ylab("Probability of Survival") + 
+    guides(col = guide_legend(title = "X", override.aes = list( shape='')))
+ggsave("Results/Prop.png")
+```
+
+Next, we generate a non-proportional hazards plot with same expected values, to use in a demonstration. The Beta(5,10) distribution has an expected value of $\frac{5}{10}=\frac{1}{3}$, and the Exp(3) distribution also have an expected value of $\frac{1}{3}$. 
+```{r}
+library(latex2exp)
+
+n<-50
+G1 <- rbeta(n,5,10)
+G2 <- rexp(n,3)
+X <- c(rep(5,n),rep(3,n))
+Dist <- ifelse(X>4,"Beta(5,10)","Exp(3)")
+T <- c(G1,G2)
+C <- runif(n,0.25,1)
+Censor <- T<=C
+Y <- pmin(T,C)
+
+df <- data.frame(X=as.factor(X),D=as.factor(Dist),Y,Censor)
+df$tm <- rep(seq(0,max(Y),length.out=50),2)
+df$true <- c(1-pbeta(df$tm[X==5],5,10),1-pexp(df$tm[X==3],3))
+ggplot(df)+geom_line(aes(x=tm,y=true,group=X,col=X),size=1.5)+
+  scale_color_manual(values=c("darkorange","deepskyblue")) +
+    xlab("Time") + 
+    ylab("Probability of Survival") + 
+    guides(col = guide_legend(title = "X", override.aes = list( shape='')))
+ggsave("Results/SameExpec.png")
+```
+
+## Example tree  
+Generating a $p=3$ set of covariates to build a survival tree. Two of the variables are correlated. Data generation choice based on @cui2017consistency.
+```{r}
+set.seed(472)
+X <- mvrnorm(n=1000,mu=c(0,0,0),Sigma=matrix(c(1,0.8,0,0.8,1,0,0,0,1),3,3))
+set.seed(473)
+T <- rexp(1000,1/exp(-1.25*X[,1]-X[,3]+2))
+set.seed(474)
+C <- rexp(1000,1/exp(-3*X[,2]+2))
+Y <- pmin(T,C)
+Censor <- as.numeric(T<=C)
+
+library(rpart)
+library(rpart.plot)
+library(partykit)
+
+trplt <- function(dat,mdpth=2,typ){
+  tr1 <- rpart(Surv(Y,Censor)~.,data=dat,control = list(maxdepth=mdpth))
+  tr1b <- rpart(Surv(log(Y+1),Censor)~.,data=dat,control = list(maxdepth=mdpth,cp=0.0001))
+  tr2 <- as.party(tr1b)
+  sf_all <- survfit(Surv(Y,Censor)~1,data=dat)
+  mdpt <- sf_all$time[min(which(sf_all$surv<=0.5))]
+  dat$node<-tr1$where
+  tr1$frame$dpth <- sapply(as.numeric(rownames(tr1$frame)), function(i){
+    floor(log(i)/log(2))
+  })
+  if(typ==1) prp(tr1,node.fun = function(x, labs, digits, varlen) paste0(tr1$frame$dpth),type = 2) else print(plot(tr2,digits=2,margins=c(1,0.4,0.1,0.4)))
+
+}
+
+rf_data <- data.frame(X,Y,Censor)
+
+tr1 <- rpart(Surv(Y,Censor)~.,data=rf_data,control = list(maxdepth=3))
+rf_data$node<-tr1$where
+tr1$frame$dpth <- sapply(as.numeric(rownames(tr1$frame)), function(i){
+  floor(log(i)/log(2))
+})
+
+png("Results/TreeSimDataDpt.png")
+prp(tr1,node.fun = function(x, labs, digits, varlen) paste0(tr1$frame$dpth),type = 2)
+#trplt(rf_data,3,1)
+dev.off()
+
+tr1b <- rpart(Surv(log(Y+1),Censor)~.,data=rf_data,control = list(maxdepth=2,cp=0.0001))
+tr2 <- as.party(tr1b)
+
+png("Results/TreeSimData.png",height=300)
+plot(tr2,digits=2,margins=c(1,0.4,0.1,0.4))
+#trplt(rf_data,2,2)
+dev.off()
+```
+
+## Splitting rules  
+Log-rank and supremum log-rank demonstration calculations.
+```{r}
+n <- 20
+set.seed(123)
+G1 <- rbeta(n,5,10)
+set.seed(456)
+G2 <- rexp(n,3)
+X1 <- c(rep(0,n),rep(1,n))
+set.seed(12)
+X2 <- sample(c(rep(0,n),rep(1,n)),n*2)
+T <- c(G1,G2)
+set.seed(789)
+C <- runif(n,0.25,1)
+Censor <- T<=C
+Y <- pmin(T,C)
+
+sfitx1 <- survfit(Surv(Y,Censor)~X1)$surv
+sftmx1 <- survfit(Surv(Y,Censor)~X1)$time
+sfitx2 <- survfit(Surv(Y,Censor)~X2)$surv
+sftmx2 <- survfit(Surv(Y,Censor)~X2)$time
+
+timepoints = sort(unique(Y[Censor == 1]))
+
+y.point = rep(NA, length(Y))
+
+for (i in 1:length(Y))
+{
+  if (Censor[i] == 1)
+    y.point[i] = match(Y[i], timepoints)
+  else
+    y.point[i] = sum(Y[i] >= timepoints)
+}
+lrx1 <- numeric(length(timepoints))
+lfx1 <- numeric(length(timepoints))
+lrx2 <- numeric(length(timepoints))
+lfx2 <- numeric(length(timepoints))
+ar <- numeric(length(timepoints))
+af <- numeric(length(timepoints))
+for (i in 1:length(Y))
+{
+  if (X[i] == 0){
+    lfx1[y.point[i]]<-lfx1[y.point[i]]+Censor[i]
+    for(j in 1:y.point[i]) lrx1[j]<-lrx1[j]+1
+  }
+  if (X2[i] == 0){
+    lfx2[y.point[i]]<-lfx2[y.point[i]]+Censor[i]
+    for(j in 1:y.point[i]) lrx2[j]<-lrx2[j]+1
+  }
+  af[y.point[i]]<-af[y.point[i]]+Censor[i]
+  for(j in 1:y.point[i]) ar[j]<-ar[j]+1
+}
+
+survdiff(Surv(Y,Censor)~X1)$chisq
+suplogrank_stat(lfx1,lrx1,af,ar)
+survdiff(Surv(Y,Censor)~X2)$chisq
+suplogrank_stat(lfx2,lrx2,af,ar)
+
+plot_framex1 <- data.frame(Time = sftmx1, Survival = sfitx1,
+                           C = ifelse(survfit(Surv(Y,Censor)~X1)$n.censor>0,"Censored",NA),
+                           Group = as.factor(X1))
+plot_framex2 <- data.frame(Time = sftmx2, Survival = sfitx2,
+                           C = ifelse(survfit(Surv(Y,Censor)~X2)$n.censor>0,"Censored",NA),
+                           Group = as.factor(c(rep(0,survfit(Surv(Y,Censor)~X2)$strata[1]),
+                                             rep(1,survfit(Surv(Y,Censor)~X2)$strata[2]))))
+
+  ggplot(plot_framex1,aes(x=Time,y=Survival)) + 
+    geom_step(aes(x=Time,y=Survival,col=Group),size=1,show.legend = TRUE) +
+    scale_shape_manual(na.translate=FALSE,values="+") +
+    geom_point(aes(shape=C,col=Group),size=5,na.rm = TRUE,show.legend = TRUE, position = "jitter") +
+    scale_color_manual(values=c("darkorange","deepskyblue")) +
+    xlab("Time") + 
+    ylab("Probability of Survival") + 
+    guides(col = guide_legend(title = TeX("x^{(1)}"), override.aes = list( shape='')), 
+           shape = guide_legend(title = "", override.aes = list(linetype = 0))) 
+  
+  ggsave("Results/DemoSampleX1.png")
+  ggplot(plot_framex2,aes(x=Time,y=Survival)) + 
+    geom_step(aes(x=Time,y=Survival,col=Group),size=1,show.legend = TRUE) +
+    scale_shape_manual(na.translate=FALSE,values="+") +
+    geom_point(aes(shape=C,col=Group),size=5,na.rm = TRUE,show.legend = TRUE, position = "jitter") +
+    scale_color_manual(values=c("darkorange","deepskyblue")) +
+    xlab("Time") + 
+    ylab("Probability of Survival") + 
+    guides(col = guide_legend(title = TeX("x^{(2)}"), override.aes = list( shape='')), 
+           shape = guide_legend(title = "", override.aes = list(linetype = 0))) 
+  
+  ggsave("Results/DemoSampleX2.png")
+```
+
+
+## Bias Example  
+Example based on [@cui2017consistency]
+```{r, Cui_Ex,eval=FALSE}
+sum_mat <- matrix(0,2,3)
+
+for(i in 1:1000){
+  set.seed(10000+i)
+  X <- mvrnorm(n=1000,mu=c(0,0,0),Sigma=matrix(c(1,0.8,0,0.8,1,0,0,0,1),3,3))
+  set.seed(20000+i)
+  T <- rexp(1000,1/exp(-1.25*X[,1]-X[,3]+2))
+  set.seed(30000+i)
+  C <- rexp(1000,1/exp(2))
+  Y <- pmin(T,C)
+  Censor <- as.numeric(T<=C)
+  fit <- RLT(X,Y,Censor,ntrees = 1,nmin = 100,split.gen = "best",mtry=3,resample.prob = 1)
+  sum_mat[1,fit$FittedForest$SplitVar[[1]][1,1]+1]<-sum_mat[1,fit$FittedForest$SplitVar[[1]][1,1]+1]+1 
+  set.seed(40000+i)
+  C <- rexp(1000,1/exp(-3*X[,2]+2))
+  Y <- pmin(T,C)
+  Censor <- as.numeric(T<=C)
+  fit <- RLT(X,Y,Censor,ntrees = 1,nmin = 100,split.gen = "best",mtry=3,resample.prob = 1)
+  sum_mat[2,fit$FittedForest$SplitVar[[1]][1,1]+1]<-sum_mat[2,fit$FittedForest$SplitVar[[1]][1,1]+1]+1 
+
+}
+```
+
+```{r,include=FALSE}
+#save(sum_mat, file="Data\\BiasDemoResults.Rdata")
+load("Data\\BiasDemoResults.Rdata")
+```
+
+Results will likely vary slightly due to random number generation between random forest iterations.
+```{r}
+sum_mat/1000
+```
+
+# References
