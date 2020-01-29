@@ -143,7 +143,7 @@ We tune the model by running through all possible parameter combinations. For co
 
 ```{r, include=FALSE}
   #save(param_tunings, file = "Data\\Tunings20000.Rdata") 
-  load("Data\\Tunings20000.Rdata")
+  load("Data\\Tunings.Rdata")
 ```
 
 The optimal parameters
@@ -177,8 +177,8 @@ We fit the optimal model. Please note that due to the randomness of random fores
 ```
 
 ```{r, include=FALSE}
-  #save(fit_opt, file = "Data\\FinalModel20000.Rdata")
-  load("Data\\FinalModel20000.Rdata")
+  #save(fit_opt, file = "Data\\FinalModel.Rdata")
+  load("Data\\FinalModel.Rdata")
 ```
 
 ##Variable importance
