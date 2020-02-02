@@ -206,7 +206,8 @@ Plotting the top 40 variable importance
     scale_fill_manual(values=c("darkorange","deepskyblue")) +
     ylab("Variable Importance")+xlab("Top 20 Variables by Variable Importance") +
     coord_flip() + 
-    guides(fill = guide_legend(title = "Included in Wang et al. 76 Gene Signature"))
+    guides(fill = guide_legend(title = "Included in Wang et al. 76 Gene Signature"))+
+      theme(legend.position = "none",text = element_text(size=20))
   
   ggsave("Results/GSE2034_Top20VI.png")
   
@@ -215,7 +216,8 @@ Plotting the top 40 variable importance
     scale_fill_manual(values=c("darkorange","deepskyblue")) +
     ylab("Variable Importance")+xlab("Top 40 Variables by Variable Importance") +
     coord_flip() + 
-    guides(fill = guide_legend(title = "Included in Wang et al. 76 Gene Signature"))
+    guides(fill = guide_legend(title = "Included in Wang et al. 76 Gene Signature"))+
+      theme(legend.position = "none")
   
   ggsave("Results/GSE2034_Top40VI.png")
 ```
